@@ -1,15 +1,11 @@
-/// Direct LiteLLM BYOK Gateway integration for the `direct_bedrock` feature.
+/// Direct LiteLLM gateway integration for the `direct_bedrock` feature.
 ///
 /// Translates `warp_multi_agent_api::Request` → LiteLLM `/v1/chat/completions`
 /// (OpenAI-compatible streaming) and maps SSE chunks back to
 /// `warp_multi_agent_api::ResponseEvent`.
 ///
-/// Auth: the user's OpenAI API key field is used as the LiteLLM Bearer token.
-/// Obtain a personal key by following the instructions at:
-/// https://backstage.cabify.tools/catalog/dev-x/component/llm-ssot/docs/personal-keys-user-guide/
-///
-/// The gateway is at `https://llm-byok.cabify.tools` (overridable via
-/// `WARP_LLM_BYOK_BASE_URL` env var).
+/// Auth: the OpenAI API Key field in Settings is used as the LiteLLM Bearer
+/// token. Set `WARP_LLM_BYOK_BASE_URL` to point to your LiteLLM instance.
 ///
 /// Available models are discovered at runtime via `GET /v1/models` and cached
 /// for [`MODELS_CACHE_TTL`]. The static mapping in [`warp_model_to_litellm_id`]
@@ -36,12 +32,15 @@ pub mod direct_bedrock {
         ClientAction, Message, Request, ResponseEvent, Task,
     };
 
-    const DEFAULT_LLM_BYOK_BASE_URL: &str = "https://llm-byok.cabify.tools";
+    const DEFAULT_LLM_BYOK_BASE_URL: &str = "http://localhost:4000";
 
     /// How long to reuse a cached model list before re-fetching.
     const MODELS_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
     fn llm_byok_base_url() -> String {
+        // Load .env on first call; silently ignores a missing file.
+        let _ = dotenvy::dotenv();
+
         std::env::var("WARP_LLM_BYOK_BASE_URL")
             .unwrap_or_else(|_| DEFAULT_LLM_BYOK_BASE_URL.to_string())
     }

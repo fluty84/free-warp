@@ -291,6 +291,9 @@ aws-sdk-bedrockruntime = { version = "1", optional = true }
 aws-sdk-sts = "1"
 aws-types = "1"
 
+# Load .env in direct_bedrock dev builds
+dotenvy = { version = "0.15", optional = true }
+
 rmcp = { workspace = true, features = [
     "auth",
     "transport-streamable-http-client-reqwest",
@@ -754,9 +757,10 @@ sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
 skip_login = []
-# Build Warp to call LiteLLM (llm.cabify.tools) directly, bypassing Warp's cloud servers and login.
-# Requires a LiteLLM API key entered as the OpenAI API key in Warp Settings → AI.
-direct_bedrock = ["skip_login"]
+# Build Warp to route agent requests directly to a LiteLLM-compatible gateway,
+# bypassing Warp's cloud servers and login. Requires a LiteLLM API key entered
+# as the OpenAI API key in Warp Settings → AI. Loads .env automatically at startup.
+direct_bedrock = ["skip_login", "dep:dotenvy"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
 prompt_suggestions_via_maa = []

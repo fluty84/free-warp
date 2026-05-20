@@ -61,15 +61,19 @@ SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features direct_bedrock
 
 4. Close Settings and start a conversation with `/agent`
 
-### 4 — Point to your gateway (if not using the default)
+### 4 — Point to your gateway
 
-By default free-warp targets `https://llm-byok.cabify.tools`. To use your own
-instance, set the environment variable before running:
+Set the environment variable to your LiteLLM instance before running:
 
 ```bash
-export WARP_LLM_BYOK_BASE_URL=https://your-litellm.example.com
-./target/debug/warp-oss
+# Copy the example and fill in your values
+cp .env.example .env
+# edit .env, then:
+source .env && ./target/debug/warp-oss
 ```
+
+The default when `WARP_LLM_BYOK_BASE_URL` is not set is `http://localhost:4000`
+(standard LiteLLM local dev port).
 
 ---
 
@@ -121,7 +125,7 @@ enter your key directly in **Settings → AI → OpenAI API Key**.
 
 | Environment variable     | Default | Description |
 |--------------------------|---------|-------------|
-| `WARP_LLM_BYOK_BASE_URL` | `https://llm-byok.cabify.tools` | LiteLLM gateway base URL |
+| `WARP_LLM_BYOK_BASE_URL` | `http://localhost:4000` | LiteLLM gateway base URL |
 
 ---
 
