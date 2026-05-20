@@ -5805,6 +5805,8 @@ struct ApiKeysWidget {
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
+    #[cfg(feature = "direct_bedrock")]
+    litellm_gateway_url_editor: ViewHandle<EditorView>,
 }
 
 impl ApiKeysWidget {
@@ -5906,6 +5908,43 @@ impl ApiKeysWidget {
             "AIzaSy..."
         );
 
+        #[cfg(feature = "direct_bedrock")]
+        let litellm_gateway_url_editor = {
+            let current_url = AISettings::as_ref(ctx).litellm_gateway_url.clone();
+            ctx.add_typed_action_view(move |ctx| {
+                let appearance = Appearance::handle(ctx).as_ref(ctx);
+                let options = SingleLineEditorOptions {
+                    is_password: false,
+                    text: TextOptions {
+                        font_size_override: Some(appearance.ui_font_size()),
+                        font_family_override: Some(appearance.monospace_font_family()),
+                        text_colors_override: Some(TextColors {
+                            default_color: appearance.theme().active_ui_text_color(),
+                            disabled_color: appearance.theme().disabled_ui_text_color(),
+                            hint_color: appearance.theme().disabled_ui_text_color(),
+                        }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+                let mut editor = EditorView::single_line(options, ctx);
+                editor.set_placeholder_text("http://localhost:4000", ctx);
+                if !current_url.is_empty() {
+                    editor.set_buffer_text(&current_url, ctx);
+                }
+                editor
+            })
+        };
+        #[cfg(feature = "direct_bedrock")]
+        ctx.subscribe_to_view(&litellm_gateway_url_editor, |_, editor, event, ctx| {
+            if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
+                let url = editor.as_ref(ctx).buffer_text(ctx);
+                let _ = AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    settings.litellm_gateway_url.set_value(url, ctx)
+                });
+            }
+        });
+
         Self {
             openai_api_key_editor,
             anthropic_api_key_editor,
@@ -5913,6 +5952,8 @@ impl ApiKeysWidget {
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
+            #[cfg(feature = "direct_bedrock")]
+            litellm_gateway_url_editor,
         }
     }
 
@@ -5999,6 +6040,42 @@ impl ApiKeysWidget {
             is_enabled,
             app,
         ));
+
+        // LiteLLM gateway URL field (only available in `direct_bedrock` builds).
+        #[cfg(feature = "direct_bedrock")]
+        {
+            let padding = Some(Coords {
+                top: 10.,
+                bottom: 10.,
+                left: 16.,
+                right: 16.,
+            });
+            let editor_style = UiComponentStyles {
+                padding,
+                background: Some(appearance.theme().surface_2().into()),
+                ..Default::default()
+            };
+            let label = Text::new_inline(
+                "LiteLLM Gateway URL",
+                appearance.ui_font_family(),
+                CONTENT_FONT_SIZE,
+            )
+            .with_color(styles::header_font_color(is_any_ai_enabled, app).into())
+            .finish();
+            let input = appearance
+                .ui_builder()
+                .text_input(self.litellm_gateway_url_editor.clone())
+                .with_style(editor_style)
+                .build()
+                .finish();
+            column.add_child(
+                Flex::column()
+                    .with_spacing(8.)
+                    .with_child(label)
+                    .with_child(input)
+                    .finish(),
+            );
+        }
 
         // Show upgrade CTA if BYOK is not enabled
         if !is_byo_enabled {

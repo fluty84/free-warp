@@ -150,12 +150,18 @@ pub async fn load_aws_credentials_from_sdk(
         LoadAwsCredentialsError::CredentialsLoadFailed(message)
     })?;
 
+    let region = config
+        .region()
+        .map(|r| r.as_ref().to_string())
+        .unwrap_or_else(|| "us-east-1".to_string());
+
     Ok(AwsCredentials::new(
         creds.access_key_id().to_string(),
         creds.secret_access_key().to_string(),
         creds.session_token().map(|s| s.to_string()),
         creds.expiry(),
-    ))
+    )
+    .with_region(region))
 }
 
 /// Extension trait for `ApiKeyManager` to handle AWS credential refresh.

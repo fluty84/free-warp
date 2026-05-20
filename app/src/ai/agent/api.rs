@@ -128,6 +128,9 @@ pub struct RequestParams {
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
+    /// LiteLLM gateway base URL set via the Settings UI (direct_bedrock feature only).
+    #[cfg(feature = "direct_bedrock")]
+    pub litellm_gateway_url: String,
 }
 
 pub type Event = Result<warp_multi_agent_api::ResponseEvent, Arc<AIApiError>>;
@@ -309,6 +312,11 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
+            #[cfg(feature = "direct_bedrock")]
+            litellm_gateway_url: AISettings::as_ref(app)
+                .litellm_gateway_url
+                .trim()
+                .to_string(),
         }
     }
 }

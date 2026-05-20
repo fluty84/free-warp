@@ -21,13 +21,10 @@ pub mod direct_bedrock {
     use tokio::sync::RwLock;
     use uuid::Uuid;
     use warp_multi_agent_api::{
-        client_action::{
-            AppendToMessageContent, BeginTransaction, CommitTransaction, CreateTask,
-        },
+        client_action::{AppendToMessageContent, BeginTransaction, CommitTransaction, CreateTask},
         message as msg,
         response_event::{
-            stream_finished, ClientActions, StreamFinished, StreamInit,
-            Type as ResponseEventType,
+            stream_finished, ClientActions, StreamFinished, StreamInit, Type as ResponseEventType,
         },
         ClientAction, Message, Request, ResponseEvent, Task,
     };
@@ -37,6 +34,8 @@ pub mod direct_bedrock {
     /// How long to reuse a cached model list before re-fetching.
     const MODELS_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
+    /// Resolves the gateway URL from env vars / .env file, falling back to the compiled default.
+    /// The Settings UI override is applied earlier, in `stream_bedrock_response`.
     fn llm_byok_base_url() -> String {
         // Load .env on first call; silently ignores a missing file.
         let _ = dotenvy::dotenv();
@@ -283,7 +282,6 @@ pub mod direct_bedrock {
     // ── Build messages from conversation history ──────────────────────────────
 
     fn build_chat_messages(request: &Request) -> Vec<ChatMessage> {
-
         let mut out: Vec<ChatMessage> = Vec::new();
 
         for task in request
@@ -367,8 +365,11 @@ pub mod direct_bedrock {
     /// the Warp server would normally produce.
     ///
     /// The BYOK API key is read from `request.settings.api_keys.openai`.
+    ///
+    /// `gateway_url_override`: when non-empty it takes priority over env vars and the default.
     pub async fn stream_bedrock_response(
         request: &Request,
+        gateway_url_override: &str,
     ) -> Result<impl Stream<Item = Result<ResponseEvent>>> {
         let api_key = request
             .settings
@@ -377,8 +378,8 @@ pub mod direct_bedrock {
             .map(|k| k.openai.as_str())
             .filter(|k| !k.is_empty())
             .context(
-                "No LLM BYOK API key found. Set your personal sk-... key (from llm-byok.cabify.tools) \
-                 as the OpenAI API key in Warp Settings → AI.",
+                "No LLM BYOK API key found. Paste your sk-... token into \
+                 Warp Settings → AI → OpenAI API key.",
             )?
             .to_string();
 
@@ -389,7 +390,11 @@ pub mod direct_bedrock {
             .map(|mc| mc.base.as_str())
             .unwrap_or("claude-4-6-sonnet-high");
 
-        let base_url = llm_byok_base_url();
+        let base_url = if !gateway_url_override.is_empty() {
+            gateway_url_override.to_string()
+        } else {
+            llm_byok_base_url()
+        };
         let client = reqwest::Client::new();
 
         let litellm_model = resolve_model(warp_model_id, &client, &base_url, &api_key).await?;
@@ -431,9 +436,9 @@ pub mod direct_bedrock {
             .as_ref()
             .and_then(|tc| tc.tasks.first())
             .filter(|t| {
-                t.messages.iter().any(|m| {
-                    matches!(m.message, Some(msg::Message::AgentOutput(_)))
-                })
+                t.messages
+                    .iter()
+                    .any(|m| matches!(m.message, Some(msg::Message::AgentOutput(_))))
             })
             .map(|t| t.id.clone());
 

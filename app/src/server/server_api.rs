@@ -1040,6 +1040,22 @@ impl ServerApi {
         request: &warp_multi_agent_api::Request,
     ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
     {
+        // When built with the `direct_bedrock` feature, bypass Warp's servers entirely
+        // and route the request straight to AWS Bedrock.
+        #[cfg(feature = "direct_bedrock")]
+        {
+            use crate::ai::bedrock_direct::direct_bedrock::stream_bedrock_response;
+            use futures::StreamExt as _;
+
+            let bedrock_stream = stream_bedrock_response(request, "")
+                .await
+                .map_err(|e| Arc::new(AIApiError::Other(e)))?;
+
+            return Ok(bedrock_stream
+                .map(|r| r.map_err(|e| Arc::new(AIApiError::Other(e))))
+                .boxed());
+        }
+
         let auth_token = self
             .get_or_refresh_access_token()
             .await
@@ -1137,6 +1153,27 @@ impl ServerApi {
     fn cached_server_time(&self) -> Option<ServerTime> {
         let last_server_time = self.last_server_time.lock();
         last_server_time.as_ref().cloned()
+    }
+
+    /// Variant of [`Self::generate_multi_agent_output`] that accepts an explicit LiteLLM gateway
+    /// URL (used by the `direct_bedrock` feature to propagate the value from `AISettings`).
+    #[cfg(feature = "direct_bedrock")]
+    pub async fn generate_multi_agent_output_with_url(
+        &self,
+        request: &warp_multi_agent_api::Request,
+        gateway_url: &str,
+    ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
+    {
+        use crate::ai::bedrock_direct::direct_bedrock::stream_bedrock_response;
+        use futures::StreamExt as _;
+
+        let bedrock_stream = stream_bedrock_response(request, gateway_url)
+            .await
+            .map_err(|e| Arc::new(AIApiError::Other(e)))?;
+
+        Ok(bedrock_stream
+            .map(|r| r.map_err(|e| Arc::new(AIApiError::Other(e))))
+            .boxed())
     }
 
     /// Returns the inner `http_client::Client` used by the `ServerApi`. Callers can use this long-lived

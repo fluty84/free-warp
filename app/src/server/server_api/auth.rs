@@ -241,8 +241,8 @@ impl AuthClient for ServerApi {
     }
 
     async fn get_or_refresh_access_token(&self) -> Result<AuthToken> {
-        if cfg!(feature = "skip_login") {
-            bail!("skip_login enabled; failing all authenticated requests");
+        if cfg!(feature = "skip_login") || cfg!(feature = "direct_bedrock") {
+            return Ok(AuthToken::NoAuth);
         }
 
         let Some(credentials) = self.auth_state.credentials() else {

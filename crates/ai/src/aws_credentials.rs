@@ -12,6 +12,9 @@ pub struct AwsCredentials {
     secret_key: String,
     session_token: Option<String>,
     expires_at: Option<SystemTime>,
+    /// AWS region resolved from the credential chain (e.g. "us-east-1").
+    /// Used when routing requests directly to Bedrock.
+    pub region: String,
 }
 
 impl AwsCredentials {
@@ -26,7 +29,13 @@ impl AwsCredentials {
             secret_key,
             session_token,
             expires_at,
+            region: String::new(),
         }
+    }
+
+    pub fn with_region(mut self, region: impl Into<String>) -> Self {
+        self.region = region.into();
+        self
     }
 
     pub fn expires_at(&self) -> Option<SystemTime> {
@@ -54,7 +63,7 @@ impl From<AwsCredentials> for api::request::settings::api_keys::AwsCredentials {
             access_key: creds.access_key,
             secret_key: creds.secret_key,
             session_token: creds.session_token.unwrap_or_default(),
-            region: String::new(),
+            region: creds.region,
         }
     }
 }
