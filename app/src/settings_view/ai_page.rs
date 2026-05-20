@@ -5805,7 +5805,7 @@ struct ApiKeysWidget {
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
-    #[cfg(feature = "direct_bedrock")]
+    #[cfg(feature = "litellm_gateway")]
     litellm_gateway_url_editor: ViewHandle<EditorView>,
 }
 
@@ -5908,7 +5908,7 @@ impl ApiKeysWidget {
             "AIzaSy..."
         );
 
-        #[cfg(feature = "direct_bedrock")]
+        #[cfg(feature = "litellm_gateway")]
         let litellm_gateway_url_editor = {
             let current_url = AISettings::as_ref(ctx).litellm_gateway_url.clone();
             ctx.add_typed_action_view(move |ctx| {
@@ -5935,7 +5935,7 @@ impl ApiKeysWidget {
                 editor
             })
         };
-        #[cfg(feature = "direct_bedrock")]
+        #[cfg(feature = "litellm_gateway")]
         ctx.subscribe_to_view(&litellm_gateway_url_editor, |_, editor, event, ctx| {
             if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
                 let url = editor.as_ref(ctx).buffer_text(ctx);
@@ -5952,7 +5952,7 @@ impl ApiKeysWidget {
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
-            #[cfg(feature = "direct_bedrock")]
+            #[cfg(feature = "litellm_gateway")]
             litellm_gateway_url_editor,
         }
     }
@@ -6041,8 +6041,8 @@ impl ApiKeysWidget {
             app,
         ));
 
-        // LiteLLM gateway URL field (only available in `direct_bedrock` builds).
-        #[cfg(feature = "direct_bedrock")]
+        // LiteLLM gateway URL field (only available in `litellm_gateway` builds).
+        #[cfg(feature = "litellm_gateway")]
         {
             let padding = Some(Coords {
                 top: 10.,

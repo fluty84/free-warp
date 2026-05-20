@@ -241,7 +241,7 @@ impl AuthClient for ServerApi {
     }
 
     async fn get_or_refresh_access_token(&self) -> Result<AuthToken> {
-        if cfg!(feature = "skip_login") || cfg!(feature = "direct_bedrock") {
+        if cfg!(feature = "skip_login") || cfg!(feature = "litellm_gateway") {
             return Ok(AuthToken::NoAuth);
         }
 

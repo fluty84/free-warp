@@ -1040,18 +1040,18 @@ impl ServerApi {
         request: &warp_multi_agent_api::Request,
     ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
     {
-        // When built with the `direct_bedrock` feature, bypass Warp's servers entirely
-        // and route the request straight to AWS Bedrock.
-        #[cfg(feature = "direct_bedrock")]
+        // When built with the `litellm_gateway` feature, bypass Warp's servers entirely
+        // and route the request to the configured LiteLLM gateway.
+        #[cfg(feature = "litellm_gateway")]
         {
-            use crate::ai::bedrock_direct::direct_bedrock::stream_bedrock_response;
+            use crate::ai::litellm_gateway::litellm_gateway::stream_litellm_response;
             use futures::StreamExt as _;
 
-            let bedrock_stream = stream_bedrock_response(request, "")
+            let litellm_stream = stream_litellm_response(request, "")
                 .await
                 .map_err(|e| Arc::new(AIApiError::Other(e)))?;
 
-            return Ok(bedrock_stream
+            return Ok(litellm_stream
                 .map(|r| r.map_err(|e| Arc::new(AIApiError::Other(e))))
                 .boxed());
         }
@@ -1156,22 +1156,22 @@ impl ServerApi {
     }
 
     /// Variant of [`Self::generate_multi_agent_output`] that accepts an explicit LiteLLM gateway
-    /// URL (used by the `direct_bedrock` feature to propagate the value from `AISettings`).
-    #[cfg(feature = "direct_bedrock")]
+    /// URL (used by the `litellm_gateway` feature to propagate the value from `AISettings`).
+    #[cfg(feature = "litellm_gateway")]
     pub async fn generate_multi_agent_output_with_url(
         &self,
         request: &warp_multi_agent_api::Request,
         gateway_url: &str,
     ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
     {
-        use crate::ai::bedrock_direct::direct_bedrock::stream_bedrock_response;
+        use crate::ai::litellm_gateway::litellm_gateway::stream_litellm_response;
         use futures::StreamExt as _;
 
-        let bedrock_stream = stream_bedrock_response(request, gateway_url)
+        let litellm_stream = stream_litellm_response(request, gateway_url)
             .await
             .map_err(|e| Arc::new(AIApiError::Other(e)))?;
 
-        Ok(bedrock_stream
+        Ok(litellm_stream
             .map(|r| r.map_err(|e| Arc::new(AIApiError::Other(e))))
             .boxed())
     }

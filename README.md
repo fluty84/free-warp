@@ -41,7 +41,7 @@ git clone https://github.com/fluty84/free-warp.git
 cd free-warp
 
 # Build (SKIP_METAL_SHADERS avoids requiring full Xcode)
-SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features direct_bedrock
+SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features litellm_gateway
 
 # Run
 ./target/debug/warp-oss
@@ -79,13 +79,13 @@ The default when `WARP_LLM_BYOK_BASE_URL` is not set is `http://localhost:4000`
 
 ## How it works
 
-This fork adds a `direct_bedrock` Cargo feature that, when enabled, bypasses
+This fork adds a `litellm_gateway` Cargo feature that, when enabled, bypasses
 Warp's servers entirely and routes every agent request to a LiteLLM-compatible
 gateway using your key as a Bearer token.
 
 ### No login required
 
-`direct_bedrock` implies `skip_login` — the app starts without a Warp account.
+`litellm_gateway` implies `skip_login` — the app starts without a Warp account.
 
 ### Dynamic model discovery
 
@@ -129,6 +129,56 @@ enter your key directly in **Settings → AI → OpenAI API Key**.
 
 ---
 
+## Distributable build (macOS .app / .dmg)
+
+The quick-start above produces a debug binary that reads assets from the source
+tree at runtime. For a self-contained build you can share or install like a
+normal app, add the `standalone` and `release_bundle` features:
+
+```bash
+# Full Xcode required (no SKIP_METAL_SHADERS)
+cargo build --release --bin warp-oss \
+  --features litellm_gateway,standalone,release_bundle
+```
+
+The `release_bundle` feature embeds all assets directly into the binary so it
+runs from any location without the source tree.
+
+### Creating a .app bundle
+
+Use [`cargo-bundle`](https://github.com/burtonageo/cargo-bundle) to wrap the
+binary in a macOS `.app`:
+
+```bash
+cargo install cargo-bundle
+cargo bundle --release --bin warp-oss \
+  --features litellm_gateway,standalone,release_bundle
+# Output: target/release/bundle/osx/WarpOss.app
+```
+
+### Code-signing and notarization (optional)
+
+To distribute outside your own machine, macOS requires the app to be signed and
+notarized with an Apple Developer ID certificate. The repo ships a full bundle
+script at `script/macos/bundle` that handles signing, `.dmg` creation, and
+Apple notarization — it expects Warp's internal signing secrets, so you need to
+adapt it with your own Apple Developer ID credentials:
+
+```bash
+# With your own certs (set env vars first — see script/macos/bundle for details)
+./script/bundle --channel oss --release-tag v0.1.0
+```
+
+For personal or team-internal use without notarization, you can ad-hoc sign to
+suppress the Gatekeeper "unidentified developer" prompt:
+
+```bash
+codesign --force --deep --sign - target/release/bundle/osx/WarpOss.app
+# Then right-click → Open the first time to bypass Gatekeeper
+```
+
+---
+
 ## Upstream
 
 This repository tracks [warpdotdev/warp](https://github.com/warpdotdev/warp).
@@ -139,7 +189,7 @@ Changes introduced by this fork:
 
 | File | Change |
 |------|--------|
-| `app/src/ai/bedrock_direct.rs` | New module — LiteLLM gateway integration |
-| `app/src/workspaces/user_workspaces.rs` | Bypass workspace plan gates under `direct_bedrock` |
-| `app/Cargo.toml` | Add `direct_bedrock` feature |
+| `app/src/ai/litellm_gateway.rs` | New module — LiteLLM gateway integration |
+| `app/src/workspaces/user_workspaces.rs` | Bypass workspace plan gates under `litellm_gateway` |
+| `app/Cargo.toml` | Add `litellm_gateway` feature |
 | `crates/warpui/build.rs` | `SKIP_METAL_SHADERS` support for dev builds |

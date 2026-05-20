@@ -128,8 +128,8 @@ pub struct RequestParams {
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
-    /// LiteLLM gateway base URL set via the Settings UI (direct_bedrock feature only).
-    #[cfg(feature = "direct_bedrock")]
+    /// LiteLLM gateway base URL set via the Settings UI (litellm_gateway feature only).
+    #[cfg(feature = "litellm_gateway")]
     pub litellm_gateway_url: String,
 }
 
@@ -312,7 +312,7 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
-            #[cfg(feature = "direct_bedrock")]
+            #[cfg(feature = "litellm_gateway")]
             litellm_gateway_url: AISettings::as_ref(app)
                 .litellm_gateway_url
                 .trim()

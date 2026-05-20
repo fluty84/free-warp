@@ -1,4 +1,4 @@
-/// Direct LiteLLM gateway integration for the `direct_bedrock` feature.
+/// LiteLLM gateway integration for the `litellm_gateway` feature.
 ///
 /// Translates `warp_multi_agent_api::Request` → LiteLLM `/v1/chat/completions`
 /// (OpenAI-compatible streaming) and maps SSE chunks back to
@@ -11,8 +11,8 @@
 /// for [`MODELS_CACHE_TTL`]. The static mapping in [`warp_model_to_litellm_id`]
 /// translates Warp's internal model IDs to LiteLLM aliases; if the mapped alias
 /// is not present in the live model list the request fails with a clear error.
-#[cfg(feature = "direct_bedrock")]
-pub mod direct_bedrock {
+#[cfg(feature = "litellm_gateway")]
+pub mod litellm_gateway {
     use anyhow::{Context as _, Result};
     use futures::Stream;
     use serde::{Deserialize, Serialize};
@@ -35,7 +35,7 @@ pub mod direct_bedrock {
     const MODELS_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
     /// Resolves the gateway URL from env vars / .env file, falling back to the compiled default.
-    /// The Settings UI override is applied earlier, in `stream_bedrock_response`.
+    /// The Settings UI override is applied earlier, in `stream_litellm_response`.
     fn llm_byok_base_url() -> String {
         // Load .env on first call; silently ignores a missing file.
         let _ = dotenvy::dotenv();
@@ -367,7 +367,7 @@ pub mod direct_bedrock {
     /// The BYOK API key is read from `request.settings.api_keys.openai`.
     ///
     /// `gateway_url_override`: when non-empty it takes priority over env vars and the default.
-    pub async fn stream_bedrock_response(
+    pub async fn stream_litellm_response(
         request: &Request,
         gateway_url_override: &str,
     ) -> Result<impl Stream<Item = Result<ResponseEvent>>> {
