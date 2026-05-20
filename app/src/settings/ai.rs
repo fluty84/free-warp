@@ -764,8 +764,8 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.input.ai_command_denylist",
         description: "Commands to exclude from AI natural language autodetection.",
     },
-    // URL of the LiteLLM gateway (direct_bedrock feature). Shown in UI only when
-    // built with `--features direct_bedrock`. Falls back to WARP_LLM_BYOK_BASE_URL
+    // URL of the LiteLLM gateway (litellm_gateway feature). Shown in UI only when
+    // built with `--features litellm_gateway`. Falls back to WARP_LLM_BYOK_BASE_URL
     // env var and then http://localhost:4000.
     litellm_gateway_url: LiteLLMGatewayUrl {
         type: String,
@@ -773,7 +773,7 @@ define_settings_group!(AISettings, settings: [
         supported_platforms: SupportedPlatforms::ALL,
         sync_to_cloud: SyncToCloud::Never,
         private: false,
-        toml_path: "agents.direct_bedrock.litellm_gateway_url",
+        toml_path: "agents.litellm_gateway.litellm_gateway_url",
         description: "URL of the LiteLLM gateway (e.g. http://localhost:4000).",
     },
     // This field should not be referenced directly to lookup intelligent autosuggestion enablement

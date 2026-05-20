@@ -474,7 +474,7 @@ impl UserWorkspaces {
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
     /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
     pub fn is_byo_api_key_enabled(&self) -> bool {
-        #[cfg(feature = "direct_bedrock")]
+        #[cfg(feature = "litellm_gateway")]
         return true;
 
         self.current_workspace()
@@ -498,7 +498,7 @@ impl UserWorkspaces {
     /// user's local `aws_bedrock_credentials_enabled` setting instead of
     /// requiring a workspace admin to flip a server-side toggle.
     pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
-        #[cfg(feature = "direct_bedrock")]
+        #[cfg(feature = "litellm_gateway")]
         return true;
 
         self.current_workspace().is_some_and(|workspace| {
@@ -509,7 +509,7 @@ impl UserWorkspaces {
         })
     }
     pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
-        #[cfg(feature = "direct_bedrock")]
+        #[cfg(feature = "litellm_gateway")]
         return HostEnablementSetting::RespectUserSetting;
 
         self.aws_bedrock_host_settings()
