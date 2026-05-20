@@ -15,6 +15,8 @@ pub mod artifacts;
 pub(crate) mod attachment_utils;
 #[cfg(not(target_family = "wasm"))]
 pub mod aws_credentials;
+#[cfg(feature = "direct_bedrock")]
+pub mod bedrock_direct;
 pub(crate) mod block_context;
 pub(crate) mod blocklist;
 pub mod control_code_parser;

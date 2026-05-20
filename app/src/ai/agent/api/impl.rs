@@ -129,6 +129,11 @@ pub async fn generate_multi_agent_output(
         mcp_context: params.mcp_context.map(Into::into),
     };
 
+    #[cfg(feature = "direct_bedrock")]
+    let response_stream = server_api
+        .generate_multi_agent_output_with_url(&request, &params.litellm_gateway_url)
+        .await;
+    #[cfg(not(feature = "direct_bedrock"))]
     let response_stream = server_api.generate_multi_agent_output(&request).await;
     match response_stream {
         Ok(stream) => {
