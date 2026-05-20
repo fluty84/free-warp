@@ -2,88 +2,115 @@
     <img width="1024" alt="Warp Agentic Development Environment product preview" src="https://github.com/user-attachments/assets/9976b2da-2edd-4604-a36c-8fd53719c6d4" />
 </a>
 
+<h1 align="center">free-warp</h1>
+
 <p align="center">
-  <a href="https://www.warp.dev">Website</a>
-  ·
-  <a href="https://www.warp.dev/code">Code</a>
-  ·
-  <a href="https://www.warp.dev/agents">Agents</a>
-  ·
-  <a href="https://www.warp.dev/terminal">Terminal</a>
-  ·
-  <a href="https://www.warp.dev/drive">Drive</a>
-  ·
-  <a href="https://docs.warp.dev">Docs</a>
-  ·
-  <a href="https://www.warp.dev/blog/how-warp-works">How Warp Works</a>
+  A fork of the <a href="https://github.com/warpdotdev/warp">Warp open-source client</a> that replaces
+  Warp's cloud backend with a personal <a href="https://github.com/BerriAI/litellm">LiteLLM</a> key,
+  so you can run the full Warp agent without a Warp account or credits.
 </p>
 
-> [!NOTE]
-> OpenAI is the founding sponsor of the new, open-source Warp repository, and the new agentic management workflows are powered by GPT models.
+---
 
-<h1></h1>
+## How it works
 
-## About
+This fork adds a `direct_bedrock` Cargo feature that, when enabled, bypasses Warp's
+servers entirely and routes every agent request straight to a LiteLLM-compatible
+gateway using your own API key as a Bearer token.
 
-[Warp](https://www.warp.dev) is an agentic development environment, born out of the terminal. Use Warp's built-in coding agent, or bring your own CLI agent (Claude Code, Codex, Gemini CLI, and others).
+The reference gateway is Cabify's internal BYOK endpoint (`llm-byok.cabify.tools`),
+but any OpenAI-compatible LiteLLM instance works — override it with
+`WARP_LLM_BYOK_BASE_URL`.
 
-## Installation
+## Features
 
-You can [download Warp](https://www.warp.dev/download) and [read our docs](https://docs.warp.dev/) for platform-specific instructions.
+### No login required
 
-## Licensing
+The `direct_bedrock` feature implies `skip_login`. The app starts without
+requiring a Warp account.
 
-Warp's UI framework (the `warpui_core` and `warpui` crates) are licensed under the [MIT license](LICENSE-MIT).
+### Dynamic model discovery
 
-The rest of the code in this repository is licensed under the [AGPL v3](LICENSE-AGPL).
+On the first request, the client calls `GET /v1/models` with your API key and
+caches the result for 24 hours. Model resolution works like this:
 
-## Open Source & Contributing
+1. **Static alias** — a built-in mapping translates Warp's internal model IDs
+   (`claude-4-6-sonnet-high`, etc.) to LiteLLM model names.
+2. **Direct match** — if the Warp model ID matches a live model name literally,
+   it is used as-is.
+3. **Auto / unknown model** — when Warp requests `"auto"` or an unrecognised ID,
+   the best available model is selected automatically by scoring the live list:
+   `opus` (3) > `sonnet` (2) > `haiku / mini / lite` (1) > anything else (0).
 
-Warp's client codebase is open source and lives in this repository. We welcome community contributions and have designed a lightweight workflow to help new contributors get started. For the full contribution flow, read our [CONTRIBUTING.md](CONTRIBUTING.md) guide.
+No model names or versions are hardcoded beyond the family-level scoring heuristic.
 
-### Issue to PR
+### Vision / image attachments
 
-Before filing, [search existing issues](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) for your bug or feature request. If nothing exists, [file an issue](https://github.com/warpdotdev/warp/issues/new/choose) using our templates. Security vulnerabilities should be reported privately as described in [CONTRIBUTING.md](CONTRIBUTING.md#reporting-security-issues).
+Images attached in the Warp chat are forwarded to the model as base64 data URIs
+in the OpenAI multimodal format (`content: [{type: "image_url", ...}]`).
 
-Once filed, a Warp maintainer reviews the issue and may apply a readiness label: [`ready-to-spec`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-spec) signals the design is open for contributors to spec out, and [`ready-to-implement`](https://github.com/warpdotdev/warp/issues?q=is%3Aissue+is%3Aopen+label%3Aready-to-implement) signals the design is settled and code PRs are welcome. Anyone can pick up a labeled issue — mention **@oss-maintainers** on an issue if you'd like it considered for a readiness label.
+### Multi-turn conversations
 
-### Building the Repo Locally
+The protocol correctly handles both first messages (sends `CreateTask` to
+establish the root task) and follow-up messages (sends `AddMessagesToTask` to
+append a new response to the existing task). A follow-up is detected when the
+request's `task_context` already contains an `AgentOutput` message, meaning the
+server has responded at least once.
 
-To build and run Warp from source:
+### BYOK settings always unlocked
+
+The "Upgrade to Build plan" gate on the API Keys settings page is bypassed — you
+can enter your personal `sk-...` key directly in **Settings → AI → OpenAI API Key**.
+
+---
+
+## Getting a personal key (Cabify employees)
+
+Follow the [personal keys user guide](https://backstage.cabify.tools/catalog/dev-x/component/llm-ssot/docs/personal-keys-user-guide/)
+to request a key from `llm-byok.cabify.tools`.
+
+Once you have your `sk-...`, set it as the **OpenAI API Key** in Warp Settings → AI.
+
+---
+
+## Building
 
 ```bash
-./script/bootstrap   # platform-specific setup
-./script/run         # build and run Warp
-./script/presubmit   # fmt, clippy, and tests
+# Install Rust via rustup (the project pins its toolchain in rust-toolchain.toml)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Build the free-warp binary
+SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features direct_bedrock
+
+# Run it
+./target/debug/warp-oss
 ```
 
-See [WARP.md](WARP.md) for the full engineering guide, including coding style, testing, and platform-specific notes.
+`SKIP_METAL_SHADERS=1` skips Metal shader compilation, which requires full Xcode.
+The resulting binary works for development and testing; a production build should
+omit this flag.
 
-## Joining the Team
+---
 
-Interested in joining the team? See our [open roles](https://www.warp.dev/careers).
+## Configuration
 
-## Support and Questions
+| Environment variable     | Default                        | Description                              |
+|--------------------------|--------------------------------|------------------------------------------|
+| `WARP_LLM_BYOK_BASE_URL` | `https://llm-byok.cabify.tools`| LiteLLM gateway base URL                 |
 
-1. See our [docs](https://docs.warp.dev/) for a comprehensive guide to Warp's features.
-2. Join our [Slack Community](https://go.warp.dev/join-preview) to connect with other users and get help from the Warp team.
-3. Try our [Preview build](https://www.warp.dev/download-preview) to test the latest experimental features.
-4. Mention **@oss-maintainers** on any issue to escalate to the team — for example, if you encounter problems with the automated agents.
+---
 
-## Code of Conduct
+## Upstream
 
-We ask everyone to be respectful and empathetic. Warp follows the [Code of Conduct](CODE_OF_CONDUCT.md). To report violations, email warp-coc at warp.dev.
+This repository tracks [warpdotdev/warp](https://github.com/warpdotdev/warp).
+All upstream licensing terms apply — see [LICENSE-MIT](LICENSE-MIT) and
+[LICENSE-AGPL](LICENSE-AGPL).
 
-## Open Source Dependencies
+The changes introduced by this fork live in:
 
-We'd like to call out a few of the [open source dependencies](https://docs.warp.dev/help/licenses) that have helped Warp to get off the ground:
-
-* [Tokio](https://github.com/tokio-rs/tokio)
-* [NuShell](https://github.com/nushell/nushell)
-* [Fig Completion Specs](https://github.com/withfig/autocomplete)
-* [Warp Server Framework](https://github.com/seanmonstar/warp)
-* [Alacritty](https://github.com/alacritty/alacritty)
-* [Hyper HTTP library](https://github.com/hyperium/hyper)
-* [FontKit](https://github.com/servo/font-kit)
-* [Core-foundation](https://github.com/servo/core-foundation-rs)
-* [Smol](https://github.com/smol-rs/smol)
+| File | Change |
+|------|--------|
+| `app/src/ai/bedrock_direct.rs` | New module — LiteLLM gateway integration |
+| `app/src/workspaces/user_workspaces.rs` | Bypass workspace plan gates under `direct_bedrock` |
+| `app/Cargo.toml` | Add `direct_bedrock` feature |
+| `crates/warpui/build.rs` | Support `SKIP_METAL_SHADERS` for dev builds |

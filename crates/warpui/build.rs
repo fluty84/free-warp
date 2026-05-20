@@ -80,6 +80,15 @@ fn compile_metal_shaders() {
     println!("cargo:rerun-if-changed={header_path}");
     println!("cargo:rerun-if-changed={metal_path}");
 
+    // Skip Metal shader compilation when the `metal` tool isn't available (e.g. Command Line
+    // Tools only, without full Xcode). The resulting binary won't render, but this allows
+    // `cargo check` / type-checking to succeed in development environments that lack Xcode.
+    if env::var("SKIP_METAL_SHADERS").is_ok() {
+        std::fs::write(air_path, b"").expect("failed to create stub .air");
+        std::fs::write(lib_path, b"").expect("failed to create stub .metallib");
+        return;
+    }
+
     let mut compile_args = vec!["-sdk", "macosx", "metal", "-c", metal_path, "-o", air_path];
     if cfg!(feature = "enable-metal-frame-capture") {
         compile_args.push("-frecord-sources");

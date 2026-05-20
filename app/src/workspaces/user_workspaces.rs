@@ -474,6 +474,9 @@ impl UserWorkspaces {
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
     /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
     pub fn is_byo_api_key_enabled(&self) -> bool {
+        #[cfg(feature = "direct_bedrock")]
+        return true;
+
         self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
             .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
@@ -490,7 +493,14 @@ impl UserWorkspaces {
     }
 
     /// Did the admin enable AWS Bedrock for the current workspace?
+    ///
+    /// In the OSS build there is no Warp workspace, so we fall back to the
+    /// user's local `aws_bedrock_credentials_enabled` setting instead of
+    /// requiring a workspace admin to flip a server-side toggle.
     pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
+        #[cfg(feature = "direct_bedrock")]
+        return true;
+
         self.current_workspace().is_some_and(|workspace| {
             workspace.settings.llm_settings.enabled
                 && self
@@ -499,6 +509,9 @@ impl UserWorkspaces {
         })
     }
     pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
+        #[cfg(feature = "direct_bedrock")]
+        return HostEnablementSetting::RespectUserSetting;
+
         self.aws_bedrock_host_settings()
             .map(|settings| settings.enablement_setting.clone())
             .unwrap_or_default()
