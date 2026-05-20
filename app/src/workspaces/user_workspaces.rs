@@ -476,10 +476,11 @@ impl UserWorkspaces {
     pub fn is_byo_api_key_enabled(&self) -> bool {
         #[cfg(feature = "litellm_gateway")]
         return true;
-
-        self.current_workspace()
+        #[cfg(not(feature = "litellm_gateway"))]
+        return self
+            .current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
-            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
+            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled());
     }
 
     pub fn aws_bedrock_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {
@@ -500,21 +501,22 @@ impl UserWorkspaces {
     pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
         #[cfg(feature = "litellm_gateway")]
         return true;
-
-        self.current_workspace().is_some_and(|workspace| {
+        #[cfg(not(feature = "litellm_gateway"))]
+        return self.current_workspace().is_some_and(|workspace| {
             workspace.settings.llm_settings.enabled
                 && self
                     .aws_bedrock_host_settings()
                     .is_some_and(|settings| settings.enabled)
-        })
+        });
     }
     pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
         #[cfg(feature = "litellm_gateway")]
         return HostEnablementSetting::RespectUserSetting;
-
-        self.aws_bedrock_host_settings()
+        #[cfg(not(feature = "litellm_gateway"))]
+        return self
+            .aws_bedrock_host_settings()
             .map(|settings| settings.enablement_setting.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
     }
 
     pub fn is_aws_bedrock_credentials_toggleable(&self) -> bool {
