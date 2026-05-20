@@ -6,97 +6,122 @@
 
 <p align="center">
   A fork of the <a href="https://github.com/warpdotdev/warp">Warp open-source client</a> that replaces
-  Warp's cloud backend with a personal <a href="https://github.com/BerriAI/litellm">LiteLLM</a> key,
-  so you can run the full Warp agent without a Warp account or credits.
+  Warp's cloud backend with any <a href="https://github.com/BerriAI/litellm">LiteLLM</a>-compatible
+  gateway, so you can run the full Warp agent without a Warp account or credits.
 </p>
+
+---
+
+## Quick start
+
+### 1 — Get a key from your LiteLLM gateway
+
+free-warp uses the **OpenAI API Key** field in Settings as the Bearer token sent
+to your LiteLLM instance. It does **not** call OpenAI — the field is simply how
+the key reaches the app.
+
+Get your key from your LiteLLM instance:
+
+- **Self-hosted LiteLLM** — create a virtual key in your LiteLLM dashboard
+  (`/ui` → Virtual Keys) or via the API:
+  ```bash
+  curl -X POST https://your-litellm.example.com/key/generate \
+    -H "Authorization: Bearer <master-key>" \
+    -H "Content-Type: application/json" \
+    -d '{"duration": "30d"}'
+  ```
+- **Managed LiteLLM** — obtain a `sk-...` key from your provider's dashboard
+  or admin.
+
+### 2 — Build and run
+
+```bash
+# Prerequisites: Rust (rustup), Xcode Command Line Tools (macOS)
+git clone https://github.com/fluty84/free-warp.git
+cd free-warp
+
+# Build (SKIP_METAL_SHADERS avoids requiring full Xcode)
+SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features direct_bedrock
+
+# Run
+./target/debug/warp-oss
+```
+
+> **Production build** (better performance): omit `SKIP_METAL_SHADERS=1` and
+> make sure full Xcode is installed.
+
+### 3 — Enter your key in Settings
+
+1. Open **Settings** (⌘,) → **AI**
+2. Scroll to **API Keys**
+3. Paste your `sk-...` token into the **OpenAI API Key** field
+
+   > This field is repurposed as the LiteLLM Bearer token. The key is stored
+   > locally and never sent to any Warp server.
+
+4. Close Settings and start a conversation with `/agent`
+
+### 4 — Point to your gateway (if not using the default)
+
+By default free-warp targets `https://llm-byok.cabify.tools`. To use your own
+instance, set the environment variable before running:
+
+```bash
+export WARP_LLM_BYOK_BASE_URL=https://your-litellm.example.com
+./target/debug/warp-oss
+```
 
 ---
 
 ## How it works
 
-This fork adds a `direct_bedrock` Cargo feature that, when enabled, bypasses Warp's
-servers entirely and routes every agent request straight to a LiteLLM-compatible
-gateway using your own API key as a Bearer token.
-
-The reference gateway is Cabify's internal BYOK endpoint (`llm-byok.cabify.tools`),
-but any OpenAI-compatible LiteLLM instance works — override it with
-`WARP_LLM_BYOK_BASE_URL`.
-
-## Features
+This fork adds a `direct_bedrock` Cargo feature that, when enabled, bypasses
+Warp's servers entirely and routes every agent request to a LiteLLM-compatible
+gateway using your key as a Bearer token.
 
 ### No login required
 
-The `direct_bedrock` feature implies `skip_login`. The app starts without
-requiring a Warp account.
+`direct_bedrock` implies `skip_login` — the app starts without a Warp account.
 
 ### Dynamic model discovery
 
 On the first request, the client calls `GET /v1/models` with your API key and
-caches the result for 24 hours. Model resolution works like this:
+caches the result for 24 hours. Model resolution works as follows:
 
 1. **Static alias** — a built-in mapping translates Warp's internal model IDs
    (`claude-4-6-sonnet-high`, etc.) to LiteLLM model names.
-2. **Direct match** — if the Warp model ID matches a live model name literally,
-   it is used as-is.
-3. **Auto / unknown model** — when Warp requests `"auto"` or an unrecognised ID,
-   the best available model is selected automatically by scoring the live list:
+2. **Direct match** — if the Warp model ID matches a model name in the live
+   list, it is used as-is.
+3. **Auto / unknown model** — when Warp requests `"auto"` or an unrecognised
+   ID, the best available model is chosen by scoring the live list:
    `opus` (3) > `sonnet` (2) > `haiku / mini / lite` (1) > anything else (0).
 
-No model names or versions are hardcoded beyond the family-level scoring heuristic.
+No model names or versions are hardcoded beyond these family-level tiers.
 
 ### Vision / image attachments
 
 Images attached in the Warp chat are forwarded to the model as base64 data URIs
-in the OpenAI multimodal format (`content: [{type: "image_url", ...}]`).
+in the standard OpenAI multimodal format (`content: [{type: "image_url", ...}]`).
 
 ### Multi-turn conversations
 
-The protocol correctly handles both first messages (sends `CreateTask` to
-establish the root task) and follow-up messages (sends `AddMessagesToTask` to
-append a new response to the existing task). A follow-up is detected when the
-request's `task_context` already contains an `AgentOutput` message, meaning the
-server has responded at least once.
+The protocol correctly distinguishes first messages (sends `CreateTask`) from
+follow-ups (sends `AddMessagesToTask`). A follow-up is detected when the
+request's `task_context` already contains an `AgentOutput`, meaning the server
+has responded at least once.
 
 ### BYOK settings always unlocked
 
-The "Upgrade to Build plan" gate on the API Keys settings page is bypassed — you
-can enter your personal `sk-...` key directly in **Settings → AI → OpenAI API Key**.
-
----
-
-## Getting a personal key (Cabify employees)
-
-Follow the [personal keys user guide](https://backstage.cabify.tools/catalog/dev-x/component/llm-ssot/docs/personal-keys-user-guide/)
-to request a key from `llm-byok.cabify.tools`.
-
-Once you have your `sk-...`, set it as the **OpenAI API Key** in Warp Settings → AI.
-
----
-
-## Building
-
-```bash
-# Install Rust via rustup (the project pins its toolchain in rust-toolchain.toml)
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Build the free-warp binary
-SKIP_METAL_SHADERS=1 cargo build --bin warp-oss --features direct_bedrock
-
-# Run it
-./target/debug/warp-oss
-```
-
-`SKIP_METAL_SHADERS=1` skips Metal shader compilation, which requires full Xcode.
-The resulting binary works for development and testing; a production build should
-omit this flag.
+The "Upgrade to Build plan" gate on the API Keys page is bypassed — you can
+enter your key directly in **Settings → AI → OpenAI API Key**.
 
 ---
 
 ## Configuration
 
-| Environment variable     | Default                        | Description                              |
-|--------------------------|--------------------------------|------------------------------------------|
-| `WARP_LLM_BYOK_BASE_URL` | `https://llm-byok.cabify.tools`| LiteLLM gateway base URL                 |
+| Environment variable     | Default | Description |
+|--------------------------|---------|-------------|
+| `WARP_LLM_BYOK_BASE_URL` | `https://llm-byok.cabify.tools` | LiteLLM gateway base URL |
 
 ---
 
@@ -106,11 +131,11 @@ This repository tracks [warpdotdev/warp](https://github.com/warpdotdev/warp).
 All upstream licensing terms apply — see [LICENSE-MIT](LICENSE-MIT) and
 [LICENSE-AGPL](LICENSE-AGPL).
 
-The changes introduced by this fork live in:
+Changes introduced by this fork:
 
 | File | Change |
 |------|--------|
 | `app/src/ai/bedrock_direct.rs` | New module — LiteLLM gateway integration |
 | `app/src/workspaces/user_workspaces.rs` | Bypass workspace plan gates under `direct_bedrock` |
 | `app/Cargo.toml` | Add `direct_bedrock` feature |
-| `crates/warpui/build.rs` | Support `SKIP_METAL_SHADERS` for dev builds |
+| `crates/warpui/build.rs` | `SKIP_METAL_SHADERS` support for dev builds |
