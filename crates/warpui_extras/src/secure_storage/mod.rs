@@ -55,6 +55,23 @@ pub fn register(service_name: &str, ctx: &mut warpui::AppContext) {
     ctx.add_singleton_model(|_| -> Model { Box::new(imp::SecureStorage::new(service_name)) });
 }
 
+/// Registers a file-based Secure Storage provider for macOS.
+///
+/// Instead of the Keychain, secrets are stored as encrypted files under
+/// `storage_dir`.  Use this for dev/debug builds to avoid repeated Keychain
+/// prompts that occur because an unsigned binary gets a new identity on every
+/// `cargo build`.
+#[cfg(target_os = "macos")]
+pub fn register_with_dir(
+    service_name: &str,
+    storage_dir: std::path::PathBuf,
+    ctx: &mut warpui::AppContext,
+) {
+    ctx.add_singleton_model(move |_| -> Model {
+        Box::new(imp::SecureStorage::new_with_dir(service_name, storage_dir))
+    });
+}
+
 /// Registers a no-op Secure Storage provider with the application.
 pub fn register_noop(service_name: &str, ctx: &mut warpui::AppContext) {
     ctx.add_singleton_model(|_| -> Model { Box::new(noop::SecureStorage::new(service_name)) });

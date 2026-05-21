@@ -8,6 +8,8 @@ use warp_core::ui::icons::Icon;
 use warp_core::user_preferences::GetUserPreferences;
 use warpui::{AppContext, Entity, EntityId, ModelContext, SingletonEntity};
 
+use ai::api_keys::ApiKeyManager;
+
 use crate::{
     auth::{
         auth_manager::{AuthManager, AuthManagerEvent},
@@ -16,6 +18,7 @@ use crate::{
     network::{NetworkStatus, NetworkStatusEvent, NetworkStatusKind},
     report_error,
     server::server_api::ServerApiProvider,
+    settings::{AISettings, AISettingsChangedEvent},
     workspaces::user_workspaces::{UserWorkspaces, UserWorkspacesEvent},
 };
 
@@ -503,6 +506,11 @@ pub struct LLMPreferences {
     // from the base LLM for the active profile. This means that if the user selects the
     // profile's default model and changes their profile, the model will update to that profile's default.
     base_llm_for_terminal_view: HashMap<EntityId, LLMId>,
+    /// When true, `/model` shows only models from the LiteLLM gateway.
+    is_litellm_mode: bool,
+    /// Model list fetched from the LiteLLM gateway; replaces `models_by_feature` in the picker
+    /// while LiteLLM mode is active.
+    litellm_models_by_feature: Option<ModelsByFeature>,
 }
 
 impl LLMPreferences {
@@ -536,11 +544,39 @@ impl LLMPreferences {
 
         let base_llm_for_terminal_view = HashMap::new();
 
+        let is_litellm_mode = AISettings::as_ref(ctx).is_litellm_mode_enabled();
+
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, event, ctx| {
+            match event {
+                AISettingsChangedEvent::LiteLLMModeEnabled { .. } => {
+                    me.is_litellm_mode = AISettings::as_ref(ctx).is_litellm_mode_enabled();
+                    if me.is_litellm_mode {
+                        me.refresh_litellm_models(ctx);
+                    } else {
+                        me.litellm_models_by_feature = None;
+                        ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                    }
+                }
+                AISettingsChangedEvent::LiteLLMGatewayUrl { .. } => {
+                    if me.is_litellm_mode {
+                        me.refresh_litellm_models(ctx);
+                    }
+                }
+                _ => {}
+            }
+        });
+
         let me = Self {
             models_by_feature,
             last_update: None,
             base_llm_for_terminal_view,
+            is_litellm_mode,
+            litellm_models_by_feature: None,
         };
+
+        if is_litellm_mode {
+            me.refresh_litellm_models(ctx);
+        }
 
         // In agent mode eval builds, eagerly kick off a fetch of the model list from the server
         // so that it's available by the time test steps like `set_preferred_agent_mode_llm` run.
@@ -610,11 +646,20 @@ impl LLMPreferences {
             .unwrap_or_else(|| self.models_by_feature.coding.default_llm_info())
     }
 
+    /// Returns the `AvailableLLMs` for agent mode, preferring LiteLLM models when active.
+    fn get_agent_mode_available(&self) -> &AvailableLLMs {
+        if self.is_litellm_mode {
+            if let Some(litellm_mbf) = &self.litellm_models_by_feature {
+                return &litellm_mbf.agent_mode;
+            }
+        }
+        &self.models_by_feature.agent_mode
+    }
+
     /// Returns the set of LLMs available for Agent Mode use.
     pub fn get_base_llm_choices_for_agent_mode(&self) -> impl Iterator<Item = &LLMInfo> {
         // Don't show admin-disabled models in the dropdown
-        self.models_by_feature
-            .agent_mode
+        self.get_agent_mode_available()
             .choices
             .iter()
             .filter(|llm| !matches!(llm.disable_reason, Some(DisableReason::AdminDisabled)))
@@ -659,6 +704,14 @@ impl LLMPreferences {
 
     /// Helper to get the AvailableLLMs for cli_agent, falling back to agent_mode.
     fn get_cli_agent_available(&self) -> &AvailableLLMs {
+        if self.is_litellm_mode {
+            if let Some(litellm_mbf) = &self.litellm_models_by_feature {
+                return litellm_mbf
+                    .cli_agent
+                    .as_ref()
+                    .unwrap_or(&litellm_mbf.agent_mode);
+            }
+        }
         self.models_by_feature
             .cli_agent
             .as_ref()
@@ -895,6 +948,40 @@ impl LLMPreferences {
         }
     }
 
+    /// Fetches the model list from the LiteLLM gateway and updates `litellm_models_by_feature`.
+    fn refresh_litellm_models(&self, ctx: &mut ModelContext<Self>) {
+        use crate::ai::litellm_gateway::litellm_gateway::fetch_litellm_model_ids;
+
+        let ai_settings = AISettings::as_ref(ctx);
+        let base_url = {
+            let configured = ai_settings.litellm_gateway_url.trim().to_string();
+            if configured.is_empty() {
+                std::env::var("WARP_LLM_BYOK_BASE_URL")
+                    .unwrap_or_else(|_| "http://localhost:4000".to_string())
+            } else {
+                configured
+            }
+        };
+        let api_key = ApiKeyManager::as_ref(ctx)
+            .keys()
+            .openai
+            .clone()
+            .unwrap_or_default();
+
+        ctx.spawn(
+            async move { fetch_litellm_model_ids(&base_url, &api_key).await },
+            |me, result, ctx| match result {
+                Ok(ids) => {
+                    me.litellm_models_by_feature = build_litellm_models_by_feature(ids);
+                    ctx.emit(LLMPreferencesEvent::UpdatedAvailableLLMs);
+                }
+                Err(e) => {
+                    log::warn!("Failed to fetch LiteLLM model list: {e}");
+                }
+            },
+        );
+    }
+
     pub fn update_feature_model_choices(
         &mut self,
         choices_result: Result<ModelsByFeature, anyhow::Error>,
@@ -1035,6 +1122,59 @@ impl Entity for LLMPreferences {
 }
 
 impl SingletonEntity for LLMPreferences {}
+
+/// Converts a list of LiteLLM model IDs into a `ModelsByFeature` for the `/model` picker.
+fn build_litellm_models_by_feature(model_ids: Vec<String>) -> Option<ModelsByFeature> {
+    if model_ids.is_empty() {
+        return None;
+    }
+
+    let choices: Vec<LLMInfo> = model_ids
+        .iter()
+        .map(|id| LLMInfo {
+            display_name: id.clone(),
+            base_model_name: id.clone(),
+            id: id.clone().into(),
+            reasoning_level: None,
+            usage_metadata: LLMUsageMetadata {
+                request_multiplier: 1,
+                credit_multiplier: None,
+            },
+            description: None,
+            disable_reason: None,
+            vision_supported: false,
+            spec: None,
+            provider: infer_provider_from_litellm_id(id),
+            host_configs: HashMap::new(),
+            discount_percentage: None,
+        })
+        .collect();
+
+    let first_id = choices[0].id.clone();
+    let available = AvailableLLMs::new(first_id, choices, None).ok()?;
+
+    Some(ModelsByFeature {
+        agent_mode: available.clone(),
+        coding: available.clone(),
+        cli_agent: Some(available),
+        computer_use: None,
+    })
+}
+
+fn infer_provider_from_litellm_id(id: &str) -> LLMProvider {
+    let lower = id.to_lowercase();
+    if lower.contains("gpt") || lower.contains("openai") || lower.contains("o1") || lower.contains("o3") || lower.contains("o4") {
+        LLMProvider::OpenAI
+    } else if lower.contains("claude") || lower.contains("anthropic") {
+        LLMProvider::Anthropic
+    } else if lower.contains("gemini") || lower.contains("google") {
+        LLMProvider::Google
+    } else if lower.contains("grok") || lower.contains("xai") {
+        LLMProvider::Xai
+    } else {
+        LLMProvider::Unknown
+    }
+}
 
 fn get_new_agent_mode_choices(
     old_config: &AvailableLLMs,

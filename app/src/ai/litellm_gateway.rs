@@ -613,4 +613,10 @@ pub mod litellm_gateway {
 
         Ok(stream)
     }
+
+    /// Fetches the list of model IDs available from the gateway (always fresh, no cache).
+    pub async fn fetch_litellm_model_ids(base_url: &str, api_key: &str) -> anyhow::Result<Vec<String>> {
+        let client = reqwest::Client::new();
+        fetch_available_models(&client, base_url, api_key).await
+    }
 }
