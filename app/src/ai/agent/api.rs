@@ -128,8 +128,7 @@ pub struct RequestParams {
     pub parent_agent_id: Option<String>,
     /// The display name for this agent (e.g. "Agent 1"), assigned by the orchestrator.
     pub agent_name: Option<String>,
-    /// LiteLLM gateway base URL set via the Settings UI (litellm_gateway feature only).
-    #[cfg(feature = "litellm_gateway")]
+    /// LiteLLM gateway base URL. Non-empty when LiteLLM mode is enabled.
     pub litellm_gateway_url: String,
 }
 
@@ -312,7 +311,6 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
-            #[cfg(feature = "litellm_gateway")]
             litellm_gateway_url: AISettings::as_ref(app)
                 .litellm_gateway_url
                 .trim()

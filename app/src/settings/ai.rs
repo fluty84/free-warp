@@ -764,9 +764,20 @@ define_settings_group!(AISettings, settings: [
         toml_path: "agents.warp_agent.input.ai_command_denylist",
         description: "Commands to exclude from AI natural language autodetection.",
     },
-    // URL of the LiteLLM gateway (litellm_gateway feature). Shown in UI only when
-    // built with `--features litellm_gateway`. Falls back to WARP_LLM_BYOK_BASE_URL
-    // env var and then http://localhost:4000.
+    // Whether to route AI requests to a local LiteLLM gateway instead of Warp servers.
+    // When true, login is not required. The --features litellm_gateway compile flag
+    // enables this by default for specialised builds.
+    litellm_mode_enabled: LiteLLMModeEnabled {
+        type: bool,
+        default: cfg!(feature = "litellm_gateway"),
+        supported_platforms: SupportedPlatforms::ALL,
+        sync_to_cloud: SyncToCloud::Never,
+        private: false,
+        toml_path: "agents.litellm_gateway.enabled",
+        description: "When true, routes AI requests to a local LiteLLM gateway instead of Warp servers.",
+    },
+    // URL of the LiteLLM gateway. Falls back to WARP_LLM_BYOK_BASE_URL env var
+    // and then http://localhost:4000.
     litellm_gateway_url: LiteLLMGatewayUrl {
         type: String,
         default: String::new(),
@@ -1495,7 +1506,16 @@ impl AISettings {
         contains_remote_blocks || contains_restored_remote_blocks
     }
 
+    pub fn is_litellm_mode_enabled(&self) -> bool {
+        cfg!(feature = "litellm_gateway") || *self.litellm_mode_enabled
+    }
+
     pub fn is_any_ai_enabled(&self, app: &AppContext) -> bool {
+        // When routing to a local gateway, login is not required.
+        if self.is_litellm_mode_enabled() {
+            return *self.is_any_ai_enabled;
+        }
+
         // Disable AI for anonymous and logged-out users.
         let is_anonymous_or_logged_out = AuthStateProvider::as_ref(app)
             .get()

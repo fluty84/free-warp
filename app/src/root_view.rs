@@ -6,6 +6,7 @@ use crate::auth::auth_override_warning_modal::AuthOverrideWarningModalVariant;
 use crate::auth::auth_state::AuthState;
 use crate::auth::auth_view_modal::AuthRedirectPayload;
 use crate::auth::login_slide::{LoginSlideEvent, LoginSlideSource, LoginSlideView};
+use crate::auth::mode_picker::{ModePickerEvent, ModePickerView};
 use crate::auth::needs_sso_link_view::NeedsSsoLinkView;
 use crate::auth::paste_auth_token_modal::{PasteAuthTokenModalEvent, PasteAuthTokenModalView};
 use crate::auth::{AuthStateProvider, LoginFailureReason};
@@ -1648,6 +1649,25 @@ enum AuthOnboardingTarget {
     Terminal(ViewHandle<Workspace>),
 }
 
+/// User preferences key to track whether the user has chosen an AI mode (Warp Cloud or
+/// LiteLLM gateway). Once set, the mode picker is no longer shown on startup.
+const HAS_SELECTED_AI_MODE_KEY: &str = "HasSelectedAIMode";
+
+fn has_selected_ai_mode(ctx: &AppContext) -> bool {
+    ctx.private_user_preferences()
+        .read_value(HAS_SELECTED_AI_MODE_KEY)
+        .unwrap_or_default()
+        .and_then(|s| serde_json::from_str::<bool>(&s).ok())
+        .unwrap_or(false)
+}
+
+fn mark_ai_mode_selected(ctx: &AppContext) {
+    let _ = ctx.private_user_preferences().write_value(
+        HAS_SELECTED_AI_MODE_KEY,
+        serde_json::to_string(&true).expect("bool serializes to JSON"),
+    );
+}
+
 /// User preferences key to track whether the user has completed the onboarding slides locally
 /// (before login). This is needed because the server-side `is_onboarded` flag requires
 /// authentication.
@@ -1672,6 +1692,10 @@ fn mark_local_onboarding_completed(ctx: &AppContext) {
 
 /// Whether auth and onboarding have completed and we should render the `Workspace`.
 enum AuthOnboardingState {
+    /// First-run mode picker: lets the user choose Warp Cloud vs LiteLLM gateway.
+    ModePicker {
+        target: Box<WorkspaceArgs>,
+    },
     Auth(Box<WorkspaceArgs>),
     ConfirmIncomingAuth(Box<WorkspaceArgs>),
     /// The client is importing auth state from the host application.
@@ -1696,6 +1720,7 @@ pub struct RootView {
     server_time: Option<Arc<ServerTime>>,
     auth_view: ViewHandle<AuthView>,
     auth_override_view: ViewHandle<AuthOverrideWarningModal>,
+    mode_picker_view: ViewHandle<ModePickerView>,
     needs_sso_link_view: ViewHandle<NeedsSsoLinkView>,
     #[cfg(target_family = "wasm")]
     web_handoff_view: ViewHandle<WebHandoffView>,
@@ -1778,9 +1803,18 @@ impl RootView {
                             onboarding_view,
                             target: AuthOnboardingTarget::Workspace(workspace_args_box),
                         }
-                    } else if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled() {
-                        // When SkipFirebaseAnonymousUser is enabled, skip the login screen
-                        // entirely and go directly into the workspace.
+                    } else if AISettings::as_ref(ctx).is_litellm_mode_enabled() {
+                        // LiteLLM mode was previously chosen: go directly to workspace.
+                        AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
+                    } else if !has_selected_ai_mode(ctx) && !cfg!(feature = "litellm_gateway") {
+                        // First run (no mode chosen yet): show the mode picker.
+                        AuthOnboardingState::ModePicker {
+                            target: workspace_args.into(),
+                        }
+                    } else if FeatureFlag::SkipFirebaseAnonymousUser.is_enabled()
+                        || cfg!(feature = "litellm_gateway")
+                    {
+                        // Skip login for skip_login builds or litellm_gateway compile-time shortcut.
                         AuthOnboardingState::Terminal(workspace_args.create_workspace(ctx))
                     } else {
                         AuthOnboardingState::Auth(workspace_args.into())
@@ -1790,6 +1824,12 @@ impl RootView {
         };
 
         let needs_sso_link_view = ctx.add_typed_action_view(|_| NeedsSsoLinkView::new());
+
+        let mode_picker_view = {
+            let view = ctx.add_typed_action_view(|ctx| ModePickerView::new(ctx));
+            ctx.subscribe_to_view(&view, Self::handle_mode_picker_event);
+            view
+        };
 
         #[cfg(target_family = "wasm")]
         let web_handoff_view = {
@@ -1803,6 +1843,7 @@ impl RootView {
             server_time: None,
             auth_view,
             auth_override_view,
+            mode_picker_view,
             needs_sso_link_view,
             #[cfg(target_family = "wasm")]
             web_handoff_view,
@@ -3148,6 +3189,37 @@ impl RootView {
         });
     }
 
+    fn handle_mode_picker_event(
+        &mut self,
+        _view: ViewHandle<ModePickerView>,
+        event: &ModePickerEvent,
+        ctx: &mut ViewContext<Self>,
+    ) {
+        mark_ai_mode_selected(ctx);
+
+        let AuthOnboardingState::ModePicker { target } = &self.auth_onboarding_state else {
+            return;
+        };
+        let target = target.clone();
+
+        match event {
+            ModePickerEvent::WarpCloudSelected => {
+                self.auth_onboarding_state = AuthOnboardingState::Auth(target);
+            }
+            ModePickerEvent::LiteLLMGatewaySelected => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.litellm_mode_enabled.set_value(true, ctx));
+                });
+                let workspace = (*target).create_workspace(ctx);
+                self.auth_onboarding_state = AuthOnboardingState::Terminal(workspace);
+            }
+        }
+
+        ctx.emit(RootViewEvent::AuthOnboardingStateChanged);
+        self.focus(ctx);
+        ctx.notify();
+    }
+
     /// This is called when importing authentication state from the host app completes.
     #[cfg(target_family = "wasm")]
     fn handle_web_handoff_event(
@@ -3190,6 +3262,9 @@ impl RootView {
             return true;
         }
         match &self.auth_onboarding_state {
+            AuthOnboardingState::ModePicker { .. } => {
+                ctx.focus(&self.mode_picker_view);
+            }
             AuthOnboardingState::Auth(_) => {
                 ctx.focus(&self.auth_view);
             }
@@ -3371,6 +3446,9 @@ impl View for RootView {
 
     fn render(&self, app: &AppContext) -> Box<dyn Element> {
         let child = match &self.auth_onboarding_state {
+            AuthOnboardingState::ModePicker { .. } => {
+                ChildView::new(&self.mode_picker_view).finish()
+            }
             AuthOnboardingState::Auth(_) => ChildView::new(&self.auth_view).finish(),
             AuthOnboardingState::ConfirmIncomingAuth(_) => {
                 ChildView::new(&self.auth_override_view).finish()
@@ -3603,9 +3681,10 @@ impl AuthOnboardingState {
                 log::error!("SSO link required after web user import");
             }
             AuthOnboardingState::NeedsSsoLink { .. } => (),
-            AuthOnboardingState::Onboarding { .. } | AuthOnboardingState::LoginSlide { .. } => {
-                // For onboarding/login slide, we don't have a workspace yet, so we can't convert to SSO link
-                // This case shouldn't normally occur
+            AuthOnboardingState::ModePicker { .. }
+            | AuthOnboardingState::Onboarding { .. }
+            | AuthOnboardingState::LoginSlide { .. } => {
+                // No workspace yet; SSO link can't apply here.
             }
             AuthOnboardingState::Terminal(terminal_view_handle) => {
                 *self = AuthOnboardingState::NeedsSsoLink(AuthOnboardingTarget::Terminal(
@@ -3634,8 +3713,10 @@ impl AuthOnboardingState {
                 }
                 AuthOnboardingTarget::Terminal(_) => {}
             },
-            AuthOnboardingState::Onboarding { .. } | AuthOnboardingState::LoginSlide { .. } => {
-                // No workspace to clean up for onboarding/login slide state
+            AuthOnboardingState::ModePicker { .. }
+            | AuthOnboardingState::Onboarding { .. }
+            | AuthOnboardingState::LoginSlide { .. } => {
+                // No workspace to clean up for these pre-auth states.
             }
             AuthOnboardingState::Terminal(workspace) => {
                 // Clean up current workspace before resetting.

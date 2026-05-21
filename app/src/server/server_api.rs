@@ -1040,22 +1040,6 @@ impl ServerApi {
         request: &warp_multi_agent_api::Request,
     ) -> std::result::Result<AIOutputStream<warp_multi_agent_api::ResponseEvent>, Arc<AIApiError>>
     {
-        // When built with the `litellm_gateway` feature, bypass Warp's servers entirely
-        // and route the request to the configured LiteLLM gateway.
-        #[cfg(feature = "litellm_gateway")]
-        {
-            use crate::ai::litellm_gateway::litellm_gateway::stream_litellm_response;
-            use futures::StreamExt as _;
-
-            let litellm_stream = stream_litellm_response(request, "")
-                .await
-                .map_err(|e| Arc::new(AIApiError::Other(e)))?;
-
-            return Ok(litellm_stream
-                .map(|r| r.map_err(|e| Arc::new(AIApiError::Other(e))))
-                .boxed());
-        }
-
         let auth_token = self
             .get_or_refresh_access_token()
             .await
@@ -1155,9 +1139,7 @@ impl ServerApi {
         last_server_time.as_ref().cloned()
     }
 
-    /// Variant of [`Self::generate_multi_agent_output`] that accepts an explicit LiteLLM gateway
-    /// URL (used by the `litellm_gateway` feature to propagate the value from `AISettings`).
-    #[cfg(feature = "litellm_gateway")]
+    /// Routes the request to a LiteLLM gateway at `gateway_url` instead of Warp's servers.
     pub async fn generate_multi_agent_output_with_url(
         &self,
         request: &warp_multi_agent_api::Request,
