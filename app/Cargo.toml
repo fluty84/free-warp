@@ -291,8 +291,7 @@ aws-sdk-bedrockruntime = { version = "1", optional = true }
 aws-sdk-sts = "1"
 aws-types = "1"
 
-# Load .env in litellm_gateway dev builds
-dotenvy = { version = "0.15", optional = true }
+dotenvy = "0.15"
 
 rmcp = { workspace = true, features = [
     "auth",
@@ -757,10 +756,10 @@ sequential_storage = []
 session_sharing = []
 session_sharing_acls = []
 skip_login = []
-# Build Warp to route agent requests to a LiteLLM-compatible gateway,
-# bypassing Warp's cloud servers and login. Requires a LiteLLM API key entered
-# as the OpenAI API key in Warp Settings → AI. Loads .env automatically at startup.
-litellm_gateway = ["skip_login", "dep:dotenvy"]
+# Shortcut: pre-enables LiteLLM mode at startup and skips login. All LiteLLM
+# code is always compiled; this flag only sets litellm_mode_enabled = true by
+# default and activates skip_login so no account is needed.
+litellm_gateway = ["skip_login"]
 # This feature should only be enabled when building a self-contained binary with the bundle script.
 standalone = []
 prompt_suggestions_via_maa = []

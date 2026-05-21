@@ -1,17 +1,17 @@
-/// LiteLLM gateway integration for the `litellm_gateway` feature.
+/// LiteLLM gateway integration.
 ///
 /// Translates `warp_multi_agent_api::Request` → LiteLLM `/v1/chat/completions`
 /// (OpenAI-compatible streaming) and maps SSE chunks back to
 /// `warp_multi_agent_api::ResponseEvent`.
 ///
 /// Auth: the OpenAI API Key field in Settings is used as the LiteLLM Bearer
-/// token. Set `WARP_LLM_BYOK_BASE_URL` to point to your LiteLLM instance.
+/// token. Set `WARP_LLM_BYOK_BASE_URL` to point to your LiteLLM instance, or
+/// configure the URL in Settings → AI → LiteLLM Gateway URL.
 ///
 /// Available models are discovered at runtime via `GET /v1/models` and cached
 /// for [`MODELS_CACHE_TTL`]. The static mapping in [`warp_model_to_litellm_id`]
 /// translates Warp's internal model IDs to LiteLLM aliases; if the mapped alias
 /// is not present in the live model list the request fails with a clear error.
-#[cfg(feature = "litellm_gateway")]
 pub mod litellm_gateway {
     use anyhow::{Context as _, Result};
     use futures::Stream;

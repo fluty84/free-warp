@@ -28,6 +28,7 @@ use crate::settings::{
     AgentModeCommandExecutionPredicate, AgentModeQuerySuggestionsEnabled, AwsBedrockAutoLogin,
     AwsBedrockCredentialsEnabled, CanUseWarpCreditsWithByok, CodeSettings, CodebaseContextEnabled,
     FileBasedMcpEnabled, GitOperationsAutogenEnabled, IncludeAgentCommandsInHistory,
+    LiteLLMModeEnabled,
     IntelligentAutosuggestionsEnabled, MemoryEnabled, NLDInTerminalEnabled,
     NaturalLanguageAutosuggestionsEnabled, OrchestrationEnabled, RuleSuggestionsEnabled,
     SharedBlockTitleGenerationEnabled, ShouldRenderCLIAgentToolbar,
@@ -2112,6 +2113,7 @@ pub enum AISettingsPageAction {
     ToggleCloudAgentComputerUse,
     ToggleFileBasedMcp,
     ToggleIncludeAgentCommandsInHistory,
+    ToggleLiteLLMMode,
     #[cfg(feature = "local_fs")]
     SetConversationLayout(crate::util::file::external_editor::settings::OpenConversationPreference),
     ToggleOrchestration,
@@ -2455,6 +2457,12 @@ impl TypedActionView for AISettingsPageView {
                     report_if_error!(settings
                         .can_use_warp_credits_with_byok
                         .toggle_and_save_value(ctx));
+                });
+                ctx.notify();
+            }
+            AISettingsPageAction::ToggleLiteLLMMode => {
+                AISettings::handle(ctx).update(ctx, |settings, ctx| {
+                    report_if_error!(settings.litellm_mode_enabled.toggle_and_save_value(ctx));
                 });
                 ctx.notify();
             }
@@ -5805,7 +5813,7 @@ struct ApiKeysWidget {
 
     can_use_warp_credits_with_byok: SwitchStateHandle,
     upgrade_highlight_index: HighlightedHyperlink,
-    #[cfg(feature = "litellm_gateway")]
+    litellm_mode_switch: SwitchStateHandle,
     litellm_gateway_url_editor: ViewHandle<EditorView>,
 }
 
@@ -5908,7 +5916,6 @@ impl ApiKeysWidget {
             "AIzaSy..."
         );
 
-        #[cfg(feature = "litellm_gateway")]
         let litellm_gateway_url_editor = {
             let current_url = AISettings::as_ref(ctx).litellm_gateway_url.clone();
             ctx.add_typed_action_view(move |ctx| {
@@ -5935,7 +5942,6 @@ impl ApiKeysWidget {
                 editor
             })
         };
-        #[cfg(feature = "litellm_gateway")]
         ctx.subscribe_to_view(&litellm_gateway_url_editor, |_, editor, event, ctx| {
             if matches!(event, EditorEvent::Blurred | EditorEvent::Enter) {
                 let url = editor.as_ref(ctx).buffer_text(ctx);
@@ -5952,7 +5958,7 @@ impl ApiKeysWidget {
 
             can_use_warp_credits_with_byok: Default::default(),
             upgrade_highlight_index: Default::default(),
-            #[cfg(feature = "litellm_gateway")]
+            litellm_mode_switch: Default::default(),
             litellm_gateway_url_editor,
         }
     }
@@ -6041,41 +6047,6 @@ impl ApiKeysWidget {
             app,
         ));
 
-        // LiteLLM gateway URL field (only available in `litellm_gateway` builds).
-        #[cfg(feature = "litellm_gateway")]
-        {
-            let padding = Some(Coords {
-                top: 10.,
-                bottom: 10.,
-                left: 16.,
-                right: 16.,
-            });
-            let editor_style = UiComponentStyles {
-                padding,
-                background: Some(appearance.theme().surface_2().into()),
-                ..Default::default()
-            };
-            let label = Text::new_inline(
-                "LiteLLM Gateway URL",
-                appearance.ui_font_family(),
-                CONTENT_FONT_SIZE,
-            )
-            .with_color(styles::header_font_color(is_any_ai_enabled, app).into())
-            .finish();
-            let input = appearance
-                .ui_builder()
-                .text_input(self.litellm_gateway_url_editor.clone())
-                .with_style(editor_style)
-                .build()
-                .finish();
-            column.add_child(
-                Flex::column()
-                    .with_spacing(8.)
-                    .with_child(label)
-                    .with_child(input)
-                    .finish(),
-            );
-        }
 
         // Show upgrade CTA if BYOK is not enabled
         if !is_byo_enabled {
@@ -6206,6 +6177,61 @@ impl SettingsWidget for ApiKeysWidget {
                     .with_margin_top(16.)
                     .finish(),
             );
+        }
+
+        // LiteLLM Gateway Mode toggle and URL field (runtime-gated, always compiled).
+        {
+            let ai_settings = AISettings::as_ref(app);
+            let is_litellm_enabled = ai_settings.is_litellm_mode_enabled();
+            let toggle = render_ai_setting_toggle::<LiteLLMModeEnabled>(
+                "LiteLLM Gateway Mode",
+                AISettingsPageAction::ToggleLiteLLMMode,
+                is_litellm_enabled,
+                true,
+                self.litellm_mode_switch.clone(),
+                &view.local_only_icon_tooltip_states,
+                app,
+            );
+            column.add_child(Container::new(toggle).with_margin_top(16.).finish());
+
+            if is_litellm_enabled {
+                let appearance = Appearance::as_ref(app);
+                let padding = Some(Coords {
+                    top: 10.,
+                    bottom: 10.,
+                    left: 16.,
+                    right: 16.,
+                });
+                let editor_style = UiComponentStyles {
+                    padding,
+                    background: Some(appearance.theme().surface_2().into()),
+                    ..Default::default()
+                };
+                let label = Text::new_inline(
+                    "LiteLLM Gateway URL",
+                    appearance.ui_font_family(),
+                    CONTENT_FONT_SIZE,
+                )
+                .with_color(styles::header_font_color(true, app).into())
+                .finish();
+                let input = appearance
+                    .ui_builder()
+                    .text_input(self.litellm_gateway_url_editor.clone())
+                    .with_style(editor_style)
+                    .build()
+                    .finish();
+                column.add_child(
+                    Container::new(
+                        Flex::column()
+                            .with_spacing(8.)
+                            .with_child(label)
+                            .with_child(input)
+                            .finish(),
+                    )
+                    .with_margin_top(8.)
+                    .finish(),
+                );
+            }
         }
 
         Container::new(column.finish())

@@ -15,7 +15,6 @@ pub mod artifacts;
 pub(crate) mod attachment_utils;
 #[cfg(not(target_family = "wasm"))]
 pub mod aws_credentials;
-#[cfg(feature = "litellm_gateway")]
 pub mod litellm_gateway;
 pub(crate) mod block_context;
 pub(crate) mod blocklist;

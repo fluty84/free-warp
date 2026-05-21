@@ -129,12 +129,13 @@ pub async fn generate_multi_agent_output(
         mcp_context: params.mcp_context.map(Into::into),
     };
 
-    #[cfg(feature = "litellm_gateway")]
-    let response_stream = server_api
-        .generate_multi_agent_output_with_url(&request, &params.litellm_gateway_url)
-        .await;
-    #[cfg(not(feature = "litellm_gateway"))]
-    let response_stream = server_api.generate_multi_agent_output(&request).await;
+    let response_stream = if !params.litellm_gateway_url.is_empty() {
+        server_api
+            .generate_multi_agent_output_with_url(&request, &params.litellm_gateway_url)
+            .await
+    } else {
+        server_api.generate_multi_agent_output(&request).await
+    };
     match response_stream {
         Ok(stream) => {
             let output_stream = stream.take_until(cancellation_rx);

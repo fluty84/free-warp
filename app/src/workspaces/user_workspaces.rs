@@ -99,6 +99,9 @@ pub struct UserWorkspaces {
     joinable_teams: Vec<DiscoverableTeam>,
     team_client: Arc<dyn TeamClient>,
     workspace_client: Arc<dyn WorkspaceClient>,
+    /// Cached value of `AISettings::is_litellm_mode_enabled()`. Kept in sync via
+    /// the existing AISettings subscription so callers don't need AppContext.
+    litellm_mode_enabled: bool,
 }
 
 /// Represents the workspaces a user potentially has access to.
@@ -147,6 +150,7 @@ impl UserWorkspaces {
             joinable_teams: Default::default(),
             team_client,
             workspace_client,
+            litellm_mode_enabled: false,
         }
     }
 
@@ -182,18 +186,23 @@ impl UserWorkspaces {
             }
         });
 
-        ctx.subscribe_to_model(&AISettings::handle(ctx), |_, ai_settings_event, ctx| {
+        ctx.subscribe_to_model(&AISettings::handle(ctx), |me, ai_settings_event, ctx| {
             if let AISettingsChangedEvent::IsAnyAIEnabled { .. } = ai_settings_event {
                 ctx.emit(UserWorkspacesEvent::CodebaseContextEnablementChanged);
             }
+            if let AISettingsChangedEvent::LiteLLMModeEnabled { .. } = ai_settings_event {
+                me.litellm_mode_enabled = AISettings::as_ref(ctx).is_litellm_mode_enabled();
+            }
         });
 
+        let litellm_mode_enabled = AISettings::as_ref(ctx).is_litellm_mode_enabled();
         Self {
             current_workspace_uid: current_workspace_uid.into(),
             workspaces: cached_workspaces.into(),
             joinable_teams: Default::default(),
             team_client,
             workspace_client,
+            litellm_mode_enabled,
         }
     }
 
@@ -474,13 +483,12 @@ impl UserWorkspaces {
     /// Note that the value may be incorrect if called before the team's billing metadata has been fetched.
     /// For solo users (no workspace), this is controlled by the `SoloUserByok` feature flag.
     pub fn is_byo_api_key_enabled(&self) -> bool {
-        #[cfg(feature = "litellm_gateway")]
-        return true;
-        #[cfg(not(feature = "litellm_gateway"))]
-        return self
-            .current_workspace()
+        if cfg!(feature = "litellm_gateway") || self.litellm_mode_enabled {
+            return true;
+        }
+        self.current_workspace()
             .map(|workspace| workspace.is_byo_api_key_enabled())
-            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled());
+            .unwrap_or(FeatureFlag::SoloUserByok.is_enabled())
     }
 
     pub fn aws_bedrock_host_settings(&self) -> Option<&super::workspace::LlmHostSettings> {
@@ -499,24 +507,24 @@ impl UserWorkspaces {
     /// user's local `aws_bedrock_credentials_enabled` setting instead of
     /// requiring a workspace admin to flip a server-side toggle.
     pub fn is_aws_bedrock_available_from_workspace(&self) -> bool {
-        #[cfg(feature = "litellm_gateway")]
-        return true;
-        #[cfg(not(feature = "litellm_gateway"))]
-        return self.current_workspace().is_some_and(|workspace| {
+        if cfg!(feature = "litellm_gateway") || self.litellm_mode_enabled {
+            return true;
+        }
+        self.current_workspace().is_some_and(|workspace| {
             workspace.settings.llm_settings.enabled
                 && self
                     .aws_bedrock_host_settings()
                     .is_some_and(|settings| settings.enabled)
-        });
+        })
     }
+
     pub fn aws_bedrock_host_enablement_setting(&self) -> HostEnablementSetting {
-        #[cfg(feature = "litellm_gateway")]
-        return HostEnablementSetting::RespectUserSetting;
-        #[cfg(not(feature = "litellm_gateway"))]
-        return self
-            .aws_bedrock_host_settings()
+        if cfg!(feature = "litellm_gateway") || self.litellm_mode_enabled {
+            return HostEnablementSetting::RespectUserSetting;
+        }
+        self.aws_bedrock_host_settings()
             .map(|settings| settings.enablement_setting.clone())
-            .unwrap_or_default();
+            .unwrap_or_default()
     }
 
     pub fn is_aws_bedrock_credentials_toggleable(&self) -> bool {
