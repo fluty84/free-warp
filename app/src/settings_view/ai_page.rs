@@ -5898,6 +5898,22 @@ impl ApiKeysWidget {
                         );
                         ctx.notify();
                     }
+                });
+                // Re-evaluate enabled state when LiteLLM mode is toggled.
+                let editor_clone2 = $editor.clone();
+                ctx.subscribe_to_model(&AISettings::handle(ctx), move |_, _, event, ctx| {
+                    if let AISettingsChangedEvent::LiteLLMModeEnabled { .. } = event {
+                        let ai_settings = AISettings::as_ref(ctx);
+                        let is_any_ai_enabled = ai_settings.is_any_ai_enabled(ctx);
+                        let is_byo_enabled =
+                            UserWorkspaces::as_ref(ctx).is_byo_api_key_enabled();
+                        AISettingsPageView::update_editor_interaction_state(
+                            editor_clone2.clone(),
+                            is_any_ai_enabled && is_byo_enabled,
+                            ctx,
+                        );
+                        ctx.notify();
+                    }
                 })
             };
         }
