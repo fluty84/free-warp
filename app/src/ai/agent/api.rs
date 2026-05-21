@@ -311,10 +311,17 @@ impl RequestParams {
             supported_tools_override: request_input.supported_tools_override.clone(),
             parent_agent_id: None,
             agent_name: None,
-            litellm_gateway_url: AISettings::as_ref(app)
-                .litellm_gateway_url
-                .trim()
-                .to_string(),
+            litellm_gateway_url: {
+                let ai_settings = AISettings::as_ref(app);
+                let configured = ai_settings.litellm_gateway_url.trim().to_string();
+                if configured.is_empty() && ai_settings.is_litellm_mode_enabled() {
+                    // No URL configured yet — fall back to env var or localhost default.
+                    std::env::var("WARP_LLM_BYOK_BASE_URL")
+                        .unwrap_or_else(|_| "http://localhost:4000".to_string())
+                } else {
+                    configured
+                }
+            },
         }
     }
 }
