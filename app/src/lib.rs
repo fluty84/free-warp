@@ -978,6 +978,12 @@ fn initialize_app(
             warpui_extras::secure_storage::register_with_fallback(&data_domain, warp_core::paths::state_dir(), ctx)
         } else if #[cfg(target_os = "windows")] {
             warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
+        } else if #[cfg(all(target_os = "macos", debug_assertions))] {
+            // Dev builds: use file-based encrypted storage instead of the Keychain.
+            // Every `cargo build` produces a new binary hash, which macOS treats as a
+            // new app identity — causing repeated Keychain permission prompts.
+            // File-based storage avoids this entirely.
+            warpui_extras::secure_storage::register_with_dir(&data_domain, warp_core::paths::state_dir(), ctx)
         } else {
             warpui_extras::secure_storage::register(&data_domain, ctx);
         }
