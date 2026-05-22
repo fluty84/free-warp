@@ -1142,8 +1142,8 @@ fn build_litellm_models_by_feature(model_ids: Vec<String>) -> Option<ModelsByFea
             },
             description: None,
             disable_reason: None,
-            vision_supported: false,
-            spec: None,
+            vision_supported: infer_vision_support_from_litellm_id(id),
+            spec: Some(infer_spec_from_litellm_id(id)),
             provider: infer_provider_from_litellm_id(id),
             host_configs: HashMap::new(),
             discount_percentage: None,
@@ -1174,6 +1174,56 @@ fn infer_provider_from_litellm_id(id: &str) -> LLMProvider {
     } else {
         LLMProvider::Unknown
     }
+}
+
+/// Derives Intelligence / Speed / Cost scores from a LiteLLM model ID.
+///
+/// Scores are 0.0–1.0 (bar fill). Tiers based on well-known model family names;
+/// unknown models get balanced mid-range estimates.
+fn infer_spec_from_litellm_id(id: &str) -> LLMSpec {
+    let lower = id.to_lowercase();
+
+    // Reasoning / extended-thinking models: maximum intelligence, very slow, very expensive.
+    if lower.contains("o1") || lower.contains("o3") || lower.contains("thinking")
+        || lower.contains("reasoner")
+    {
+        return LLMSpec { quality: 0.95, speed: 0.15, cost: 0.90 };
+    }
+
+    // Top-tier: opus, large, ultra, max, pro-max, preview (usually heavyweight).
+    if lower.contains("opus") || lower.contains("-large") || lower.contains("ultra")
+        || lower.contains("pro-max") || lower.contains("deepseek-r")
+    {
+        return LLMSpec { quality: 0.90, speed: 0.28, cost: 0.85 };
+    }
+
+    // Mid-tier: sonnet, pro, plus, 4o (non-mini), standard.
+    if lower.contains("sonnet") || lower.contains("-pro") || lower.contains("-plus")
+        || (lower.contains("4o") && !lower.contains("mini"))
+        || lower.contains("mistral-large") || lower.contains("llama-3")
+        || lower.contains("deepseek-v")
+    {
+        return LLMSpec { quality: 0.72, speed: 0.62, cost: 0.50 };
+    }
+
+    // Fast / cheap tier: haiku, mini, flash, lite, nano, turbo.
+    if lower.contains("haiku") || lower.contains("mini") || lower.contains("flash")
+        || lower.contains("lite") || lower.contains("nano") || lower.contains("turbo")
+        || lower.contains("instant") || lower.contains("fast")
+    {
+        return LLMSpec { quality: 0.48, speed: 0.92, cost: 0.18 };
+    }
+
+    // Balanced default for unrecognised model IDs.
+    LLMSpec { quality: 0.60, speed: 0.60, cost: 0.45 }
+}
+
+/// Returns true when the model name suggests multimodal / vision support.
+fn infer_vision_support_from_litellm_id(id: &str) -> bool {
+    let lower = id.to_lowercase();
+    lower.contains("vision") || lower.contains("4o") || lower.contains("gemini")
+        || lower.contains("claude") || lower.contains("gpt-4")
+        || lower.contains("llava") || lower.contains("pixtral")
 }
 
 fn get_new_agent_mode_choices(
